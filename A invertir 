@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Simulador Real de Inversiones</title>
+  <style>
+    body {
+      background-color: black;
+      color: #00ff00;
+      font-family: monospace;
+      text-align: center;
+      padding: 20px;
+    }
+    input, select, button {
+      font-family: monospace;
+      font-size: 1em;
+      padding: 8px;
+      margin: 8px;
+      background: black;
+      color: #00ff00;
+      border: 1px solid #00ff00;
+      border-radius: 5px;
+    }
+    table {
+      margin: 0 auto;
+      border-collapse: collapse;
+      margin-top: 20px;
+      color: #00ff00;
+      font-size: 1.1em;
+    }
+    th, td {
+      padding: 10px 20px;
+      border: 1px solid #00ff00;
+    }
+    h2 {
+      margin-top: 30px;
+    }
+    #error {
+      color: red;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+    canvas {
+      margin-top: 30px;
+      background: #111;
+      border: 1px solid #00ff00;
+      border-radius: 8px;
+    }
+  </style>
+  <!-- CDN Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+  <h1>Simulador Real de Inversiones</h1>
+
+  <label for="langSelect">Idioma / Language / Langue:</label>
+  <select id="langSelect">
+    <option value="es">Español</option>
+    <option value="en">English</option>
+    <option value="fr">Français</option>
+  </select>
+
+  <br/>
+
+  <label for="categoria">Categoría / Category / Catégorie:</label>
+  <select id="categoria">
+    <option value="">--</option>
+    <option value="bolsa">Bolsa / Stock / Bourse</option>
+    <option value="etf">ETF</option>
+    <option value="criptomoneda">Criptomoneda / Crypto / Crypto</option>
+    <option value="memecoin">Memecoin</option>
+  </select>
+
+  <br/>
+
+  <input type="text" id="activo" placeholder="" disabled />
+
+  <br/>
+
+  <input type="number" id="inversion" placeholder="Monto a invertir / Investment amount / Montant à investir" min="0" step="any" />
+
+  <br/>
+
+  <input type="number" id="plazo" placeholder="Plazo en meses / Months term / Durée en mois" min="1" max="120" />
+
+  <br/>
+
+  <button id="calcular">Calcular Inversión / Calculate Investment / Calculer l'investissement</button>
+
+  <div id="error"></div>
+
+  <div id="resultados"></div>
+
+  <canvas id="graficoInversion" width="600" height="300"></canvas>
+
+<script>
+  // Traducciones
+  const textos = {
+    es: {
+      errorSeleccion: "Por favor, selecciona una categoría.",
+      errorActivo: "Por favor, ingresa un activo válido.",
+      errorMonto: "Ingresa un monto válido mayor a 0.",
+      errorBolsa: activos => `Activo no válido. Activos válidos: ${activos}`,
+      errorETF: etfs => `ETF no válido. ETFs válidos: ${etfs}`,
+      errorCripto: "Error al obtener datos de criptomoneda.",
+      simula: "Simulación de",
+      montoInicial: "Monto inicial",
+      plazoMeses: "Plazo (meses)",
+      rentAnual: "Rentabilidad anual",
+      valorFinal: "Valor final estimado",
+      precioActual: "Precio actual",
+      cambio24h: "Cambio 24h",
+      capMercado: "Capitalización de mercado",
+      volumen24h: "Volumen 24h",
+      cargaDatos: "Cargando datos...",
+      categoria: "Categoría",
+      simulaMemecoin: "(muy volátil, simulación simplificada)",
+    },
+    en: {
+      errorSeleccion: "Please select a category.",
+      errorActivo: "Please enter a valid asset.",
+      errorMonto: "Enter a valid amount greater than 0.",
+      errorBolsa: actives => `Invalid asset. Valid assets: ${actives}`,
+      errorETF: etfs => `Invalid ETF. Valid ETFs: ${etfs}`,
+      errorCripto: "Error fetching cryptocurrency data.",
+      simula: "Simulation of",
+      montoInicial: "Initial amount",
+      plazoMeses: "Term (months)",
+      rentAnual: "Annual return",
+      valorFinal: "Estimated final value",
+      precioActual: "Current price",
+      cambio24h: "24h change",
+      capMercado: "Market capitalization",
+      volumen24h: "24h volume",
+      cargaDatos: "Loading data...",
+      categoria: "Category",
+      simulaMemecoin: "(very volatile, simplified simulation)",
+    },
+    fr: {
+      errorSeleccion: "Veuillez sélectionner une catégorie.",
+      errorActivo: "Veuillez entrer un actif valide.",
+      errorMonto: "Entrez un montant valide supérieur à 0.",
+      errorBolsa: actives => `Actif invalide. Actifs valides: ${actives}`,
+      errorETF: etfs => `ETF invalide. ETFs valides: ${etfs}`,
+      errorCripto: "Erreur lors de la récupération des données de crypto-monnaie.",
+      simula: "Simulation de",
+      montoInicial: "Montant initial",
+      plazoMeses: "Durée (mois)",
+      rentAnual: "Rendement annuel",
+      valorFinal: "Valeur finale estimée",
+      precioActual: "Prix actuel",
+      cambio24h: "Changement 24h",
+      capMercado: "Capitalisation boursière",
+      volumen24h: "Volume 24h",
+      cargaDatos: "Chargement des données...",
+      categoria: "Catégorie",
+      simulaMemecoin: "(très volatile, simulation simplifiée)",
+    }
+  };
+
+  // Activos válidos
+  const BolsaValidos = ["AAPL", "MSFT", "TSLA", "GOOGL", "AMZN"];
+  const ETFsValidos = ["VOO", "SPY", "QQQ"];
+
+  // Tasas de crecimiento anual aproximadas
+  const crecimientoAnual = {
+    bolsa: 0.08,      // 8%
+    etf: 0.07,        // 7%
+    memecoin: 1.5,    // 150%
+  };
+
+  // Elementos DOM
+  const langSelect = document.getElementById("langSelect");
+  const categoria = document.getElementById("categoria");
+  const activo = document.getElementById("activo");
+  const inversion = document.getElementById("inversion");
+  const plazo = document.getElementById("plazo");
+  const calcularBtn = document.getElementById("calcular");
+  const errorDiv = document.getElementById("error");
+  const resultadosDiv = document.getElementById("resultados");
+  const ctx = document.getElementById("graficoInversion").getContext("2d");
+
+  // Estado gráfico
+  let chartInstance = null;
+
+  // Cambiar placeholder y estado del input activo según categoría e idioma
+  function actualizarPlaceholder() {
+    const lang = langSelect.value;
+    const cat = categoria.value;
+    switch(cat) {
+      case "bolsa":
+        activo.placeholder = lang === "en" ? "Ex: AAPL, MSFT, TSLA (validated)" :
+                          lang === "fr" ? "Ex : AAPL, MSFT, TSLA (validé)" :
+                          "Ej: AAPL, MSFT, TSLA (validado)";
+        activo.disabled = false;
+        break;
+      case "etf":
+        activo.placeholder = lang === "en" ? "Ex: VOO, SPY, QQQ (validated)" :
+                          lang === "fr" ? "Ex : VOO, SPY, QQQ (validé)" :
+                          "Ej: VOO, SPY, QQQ (validado)";
+        activo.disabled = false;
+        break;
+      case "criptomoneda":
+        activo.placeholder = lang === "en" ? "Ex: bitcoin, ethereum" :
+                          lang === "fr" ? "Ex : bitcoin, ethereum" :
+                          "Ej: bitcoin, ethereum";
+        activo.disabled = false;
+        break;
+      case "memecoin":
+        activo.placeholder = lang === "en" ? "Ex: DOGE, SHIB" :
+                          lang === "fr" ? "Ex : DOGE, SHIB" :
+                          "Ej: DOGE, SHIB";
+        activo.disabled = false;
+        break;
+      default:
+        activo.placeholder = "";
+        activo.disabled = true;
+        break;
+    }
+  }
+
+  langSelect.addEventListener("change", () => {
+    actualizarPlaceholder();
+    errorDiv.textContent = "";
+    resultadosDiv.innerHTML = "";
+    if(chartInstance) {
+      chartInstance.destroy();
+      chartInstance = null;
+    }
+  });
+
+  categoria.addEventListener("change", () => {
+    actualizarPlaceholder();
+    errorDiv.textContent = "";
+    resultadosDiv.innerHTML = "";
+    if(chartInstance) {
+      chartInstance.destroy();
+      chartInstance = null;
+    }
+  });
+
+  // Fórmula para crecimiento compuesto mensual
+  function crecimientoCompuesto(principal, tasaAnual, meses) {
+    const tasaMensual = Math.pow(1 + tasaAnual, 1/12) - 1;
+    return principal * Math.pow(1 + tasaMensual, meses);
+  }
+
+  // Función para mostrar gráfico usando Chart.js
+  function mostrarGrafico(monto, tasaAnual, meses, lang) {
+    const datosMeses = [];
+    const datosValor = [];
+    for (let i = 0; i <= meses; i++) {
+      datosMeses.push(i);
+      const valor = crecimientoCompuesto(monto, tasaAnual, i);
+      datosValor.push(valor.toFixed(2));
+    }
+    if (chartInstance) {
+      chartInstance.destroy();
+    }
+    chartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: datosMeses,
+        datasets: [{
+          label: lang === "es" ? "Valor de la inversión" : lang === "fr" ? "Valeur de l'investissement" : "Investment Value",
+          data: datosValor,
+          borderColor: 'rgba(0, 255, 0, 0.7)',
+          backgroundColor: 'rgba(0, 255, 0, 0.2)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointHoverRadius: 6
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: {
+            title: {
+              display: true,
+              text: lang === "es" ? "Meses" : lang === "fr" ? "Mois" : "Months"
+            }
+          },
+          y: {
+            title: {
+              display: true,
+              text: lang === "es" ? "Valor ($)" : lang === "fr" ? "Valeur ($)" : "Value ($)"
+            },
+            beginAtZero: true
+          }
+        },
+        plugins: {
+          legend: {
+            labels: {color: '#00ff00'}
+          },
+          tooltip: {
+            mode: 'index',
+            intersect: false,
+          }
+        }
+      }
+    });
+  }
+
+  // Cálculo Bolsa
+  function calcularBolsa(ticker, monto, meses, lang) {
+    const tasa = crecimientoAnual.bolsa;
+    const valorFinal = crecimientoCompuesto(monto, tasa, meses);
+    resultadosDiv.innerHTML = `
+      <h2>${textos[lang].simula} ${textos[lang].categoria.includes("Bolsa") ? textos[lang].categoria : "Bolsa"} - ${ticker}</h2>
+      <table>
+        <tr><th>${textos[lang].montoInicial}</th><td>$${monto.toFixed(2)}</td></tr>
+        <tr><th>${textos[lang].plazoMeses}</th><td>${meses} ${lang === "es" ? "mes(es)" : lang === "fr" ? "mois" : "month(s)"}</td></tr>
+        <tr><th>${textos[lang].rentAnual}</th><td>${(tasa*100).toFixed(2)}%</td></tr>
+        <tr><th>${textos[lang].valorFinal}</th><td><strong>$${valorFinal.toFixed(2)}</strong></td></tr>
+      </table>
+    `;
+    mostrarGrafico(monto, tasa, meses, lang);
+  }
+
+  // Cálculo ETF
+  function calcularETF(ticker, monto, meses, lang) {
+    const tasa = crecimientoAnual.etf;
+    const valorFinal = crecimientoCompuesto(monto, tasa, meses);
+    resultadosDiv.innerHTML = `
+      <h2>${textos[lang].simula} ETF - ${ticker}</h2>
+      <table>
+        <tr><th>${textos[lang].montoInicial}</th><td>$${monto.toFixed(2)}</td></tr>
+        <tr><th>${textos[lang].plazoMeses}</th><td>${meses} ${lang === "es" ? "mes(es)" : lang === "fr" ? "mois" : "month(s)"}</td></tr>
+        <tr><th>${textos[lang].rentAnual}</th><td>${(tasa*100).toFixed(2)}%</td></tr>
+        <tr><th>${textos[lang].valorFinal}</th><td><strong>$${valorFinal.toFixed(2)}</strong></td></tr>
+      </table>
+    `;
+    mostrarGrafico(monto, tasa, meses, lang);
+  }
+
+  // Cálculo Cripto (API CoinGecko)
+  async function calcularCripto(nombre, monto, meses, lang) {
+    resultadosDiv.innerHTML = `<p>${textos[lang].cargaDatos}</p>`;
+    if(chartInstance){
+      chartInstance.destroy();
+      chartInstance = null;
+    }
+    try {
+      const resp = await fetch(`https://api.coingecko.com/api/v3/coins/${nombre}`);
+      if (!resp.ok) throw new Error("No encontrado");
+      const data = await resp.json();
+
+      const precioActual = data.market_data.current_price.usd;
+      const cambio24h = data.market_data.price_change_percentage_24h;
+      const capMercado = data.market_data.market_cap.usd;
+      const volumen24h = data.market_data.total_volume.usd;
+
+      // Suponemos rentabilidad anual promedio alta y variable
+      const tasa = 1.00; // 100% anual simulada
+      const valorFinal = crecimientoCompuesto(monto, tasa, meses);
+
+      resultadosDiv.innerHTML = `
+        <h2>${textos[lang].simula} Criptomoneda - ${data.name} (${data.symbol.toUpperCase()})</h2>
+        <table>
+          <tr><th>${textos[lang].montoInicial}</th><td>$${monto.toFixed(2)}</td></tr>
+          <tr><th>${textos[lang].plazoMeses}</th><td>${meses} ${lang === "es" ? "mes(es)" : lang === "fr" ? "mois" : "month(s)"}</td></tr>
+          <tr><th>${textos[lang].precioActual}</th><td>$${precioActual.toLocaleString()}</td></tr>
+          <tr><th>${textos[lang].cambio24h}</th><td>${cambio24h.toFixed(2)}%</td></tr>
+          <tr><th>${textos[lang].capMercado}</th><td>$${capMercado.toLocaleString()}</td></tr>
+          <tr><th>${textos[lang].volumen24h}</th><td>$${volumen24h.toLocaleString()}</td></tr>
+          <tr><th>${textos[lang].rentAnual}</th><td>100%</td></tr>
+          <tr><th>${textos[lang].valorFinal}</th><td><strong>$${valorFinal.toFixed(2)}</strong></td></tr>
+        </table>
+      `;
+      mostrarGrafico(monto, tasa, meses, lang);
+    } catch (e) {
+      errorDiv.textContent = textos[lang].errorCripto;
+      resultadosDiv.innerHTML = "";
+      if(chartInstance){
+        chartInstance.destroy();
+        chartInstance = null;
+      }
+    }
+  }
+
+  // Cálculo Memecoin (simulación alta volatilidad)
+  function calcularMemecoin(nombre, monto, meses, lang) {
+    const tasa = crecimientoAnual.memecoin;
+    const valorFinal = crecimientoCompuesto(monto, tasa, meses);
+    resultadosDiv.innerHTML = `
+      <h2>${textos[lang].simula} Memecoin - ${nombre} ${textos[lang].simulaMemecoin}</h2>
+      <table>
+        <tr><th>${textos[lang].montoInicial}</th><td>$${monto.toFixed(2)}</td></tr>
+        <tr><th>${textos[lang].plazoMeses}</th><td>${meses} ${lang === "es" ? "mes(es)" : lang === "fr" ? "mois" : "month(s)"}</td></tr>
+        <tr><th>${textos[lang].rentAnual}</th><td>${(tasa*100).toFixed(2)}%</td></tr>
+        <tr><th>${textos[lang].valorFinal}</th><td><strong>$${valorFinal.toFixed(2)}</strong></td></tr>
+      </table>
+    `;
+    mostrarGrafico(monto, tasa, meses, lang);
+  }
+
+  // Botón calcular
+  calcularBtn.addEventListener("click", async () => {
+    errorDiv.textContent = "";
+    resultadosDiv.innerHTML = "";
+    if(chartInstance){
+      chartInstance.destroy();
+      chartInstance = null;
+    }
+
+    const lang = langSelect.value;
+    const cat = categoria.value;
+    const act = activo.value.trim();
+    const monto = parseFloat(inversion.value);
+    const meses = parseInt(plazo.value);
+
+    if (!cat) {
+      errorDiv.textContent = textos[lang].errorSeleccion;
+      return;
+    }
+    if (!act) {
+      errorDiv.textContent = textos[lang].errorActivo;
+      return;
+    }
+    if (isNaN(monto) || monto <= 0) {
+      errorDiv.textContent = textos[lang].errorMonto;
+      return;
+    }
+    if (isNaN(meses) || meses < 1 || meses > 120) {
+      errorDiv.textContent = lang === "es" ? "El plazo debe estar entre 1 y 120 meses." :
+                            lang === "fr" ? "La durée doit être comprise entre 1 et 120 mois." :
+                            "Term must be between 1 and 120 months.";
+      return;
+    }
+
+    switch(cat) {
+      case "bolsa":
+        if (!BolsaValidos.includes(act.toUpperCase())) {
+          errorDiv.textContent = textos[lang].errorBolsa(BolsaValidos.join(", "));
+          return;
+        }
+        calcularBolsa(act.toUpperCase(), monto, meses, lang);
+        break;
+      case "etf":
+        if (!ETFsValidos.includes(act.toUpperCase())) {
+          errorDiv.textContent = textos[lang].errorETF(ETFsValidos.join(", "));
+          return;
+        }
+        calcularETF(act.toUpperCase(), monto, meses, lang);
+        break;
+      case "criptomoneda":
+        await calcularCripto(act.toLowerCase(), monto, meses, lang);
+        break;
+      case "memecoin":
+        calcularMemecoin(act.toUpperCase(), monto, meses, lang);
+        break;
+      default:
+        errorDiv.textContent = textos[lang].errorSeleccion;
+    }
+  });
+
+  // Inicializar placeholders
+  actualizarPlaceholder();
+</script>
+
+</body>
+</html>
